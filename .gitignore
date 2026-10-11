@@ -5,9 +5,10 @@
 # scripts/get-pokefirered.sh (pret/pokefirered + patches/)
 /pokefirered/
 # scripts/fetch-vendor.sh
-/web/vendor/
-# scripts/build-rom.sh. Build output; don't commit it.
-/web/game/
+# /web/vendor/ (tracked for web deployment)
+# scripts/build-rom.sh
+# /web/game/ (tracked for web deployment)
+
 
 # Wrangler's local cache (Cloudflare deploys)
 /.wrangler/

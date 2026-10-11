@@ -1,0 +1,26 @@
+Daily Red: third-party software and content
+===========================================
+
+Pokémon FireRed (the ROM in game/)
+  Built from pret/pokefirered (https://github.com/pret/pokefirered), a
+  community decompilation of Pokémon FireRed, with Daily Red's changes.
+  Pokémon and all game content are © Nintendo, Creatures Inc. and GAME FREAK
+  inc. This is a free, unofficial fan project, not affiliated with or endorsed
+  by them or The Pokémon Company.
+
+mGBA libretro core (vendor/mgba_libretro.js, vendor/mgba_libretro.wasm)
+  mGBA by Vicki Pfau and contributors, Mozilla Public License 2.0:
+  https://github.com/mgba-emu/mgba
+  Built for the browser as part of RetroArch (GNU GPL v3):
+  https://github.com/libretro/RetroArch
+  Build used: https://github.com/arianrhodsandlot/retroarch-emscripten-build
+  (release v1.22.2). Source code for these binaries is available at the links
+  above.
+
+Nostalgist.js (vendor/nostalgist.js)
+  MIT License, see vendor/nostalgist.LICENSE.txt
+  https://github.com/arianrhodsandlot/nostalgist
+
+Pixelify Sans (vendor/pixelify-sans.woff2)
+  SIL Open Font License 1.1, see vendor/pixelify-sans.OFL.txt
+  https://github.com/eifetx/Pixelify-Sans
