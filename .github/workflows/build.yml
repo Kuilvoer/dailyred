@@ -48,8 +48,8 @@ jobs:
           name: game-rom
           path: web/game/
 
-      - name: Create Release
+      - name: Create or Update Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create v1.0 web/game/dailyred.gba.gz web/game/red.png --title "Daily Red v1.0" --notes "Pre-built Daily Red ROM and assets"
+          gh release upload v1.0 web/game/dailyred.gba.gz web/game/red.png --clobber || gh release create v2.0 web/game/dailyred.gba.gz web/game/red.png --title "Daily Red v2.0 Competitive" --notes "Competitive update"
