@@ -338,10 +338,10 @@ index 5c7bbf8..e477fa9 100644
  #define VAR_0x402D                         0x402D
 diff --git a/include/dailyred.h b/include/dailyred.h
 new file mode 100644
-index 0000000..72b78a5
+index 0000000..f52e9c3
 --- /dev/null
 +++ b/include/dailyred.h
-@@ -0,0 +1,57 @@
+@@ -0,0 +1,46 @@
 +#ifndef GUARD_DAILYRED_H
 +#define GUARD_DAILYRED_H
 +
@@ -363,17 +363,6 @@ index 0000000..72b78a5
 +
 +#define DAILYRED_BOSS_PARTY_SIZE 6
 +
-+struct DailyRedRomConfig
-+{
-+    u8 magic[16];
-+    u32 seed;
-+    u16 wins;    // the player's record before this game, for the record message
-+    u16 battles;
-+    u8 daily;    // TRUE: the website's daily game (one battle, then the game ends)
-+    u8 padding[3];
-+};
-+
-+extern const struct DailyRedRomConfig gDailyRedRomConfig;
 +
 +// The boss team (species, IVs, items, moves) and its EV spreads.
 +// Edit src/dailyred_boss.c to change it.
