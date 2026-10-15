@@ -206,22 +206,22 @@ index 0000000..1a0b48b
 +++ b/data/maps/DailyRed_Summit/text.inc
 @@ -0,0 +1,33 @@
 +DailyRed_Summit_Text_RedIntro::
-+    .string "???\p"
-+    .string "????????????$"
++    .string "…\p"
++    .string "…………$"
 +
 +@ Shown in battle when RED loses.
 +DailyRed_Summit_Text_RedDefeat::
-+    .string "???$"
++    .string "…$"
 +
 +@ Shown in battle when RED wins.
 +DailyRed_Summit_Text_RedVictory::
-+    .string "???$"
++    .string "…$"
 +
 +DailyRed_Summit_Text_PlayerWon::
 +    .string "You defeated RED!$"
 +
 +DailyRed_Summit_Text_PlayerLost::
-+    .string "Your team was wiped out???$"
++    .string "Your team was wiped out…$"
 +
 +DailyRed_Summit_Text_RecordWin::
 +    .string "Record: {STR_VAR_1} win(s) in\n"
@@ -338,10 +338,10 @@ index 5c7bbf8..e477fa9 100644
  #define VAR_0x402D                         0x402D
 diff --git a/include/dailyred.h b/include/dailyred.h
 new file mode 100644
-index 0000000..47b058b
+index 0000000..72b78a5
 --- /dev/null
 +++ b/include/dailyred.h
-@@ -0,0 +1,42 @@
+@@ -0,0 +1,57 @@
 +#ifndef GUARD_DAILYRED_H
 +#define GUARD_DAILYRED_H
 +
@@ -363,6 +363,18 @@ index 0000000..47b058b
 +
 +#define DAILYRED_BOSS_PARTY_SIZE 6
 +
++struct DailyRedRomConfig
++{
++    u8 magic[16];
++    u32 seed;
++    u16 wins;    // the player's record before this game, for the record message
++    u16 battles;
++    u8 daily;    // TRUE: the website's daily game (one battle, then the game ends)
++    u8 padding[3];
++};
++
++extern const struct DailyRedRomConfig gDailyRedRomConfig;
++
 +// The boss team (species, IVs, items, moves) and its EV spreads.
 +// Edit src/dailyred_boss.c to change it.
 +extern const struct TrainerMonItemCustomMoves gDailyRedBossParty[DAILYRED_BOSS_PARTY_SIZE];
@@ -379,6 +391,9 @@ index 0000000..47b058b
 +void DailyRed_OnDailyGameOver(void);
 +u16 DailyRed_IsDailyGame(void);
 +void DailyRed_ApplyBossEVs(struct Pokemon *party, u8 partySize);
++
++// src/dailyred_boss.c
++void DailyRed_ApplyBossTeam(struct Pokemon *party, u8 partySize, u32 seed);
 +
 +// src/dailyred_team.c
 +void DailyRed_GenerateTeam(struct Pokemon *party, u32 *rngState);
@@ -1116,10 +1131,10 @@ index 6d62084..44f97e4 100644
      DoTrainerBattle();
 diff --git a/src/dailyred.c b/src/dailyred.c
 new file mode 100644
-index 0000000..1ec6e68
+index 0000000..98a30f8
 --- /dev/null
 +++ b/src/dailyred.c
-@@ -0,0 +1,221 @@
+@@ -0,0 +1,215 @@
 +#include "global.h"
 +#include "gflib.h"
 +#include "dailyred.h"
@@ -1328,108 +1343,250 @@ index 0000000..1ec6e68
 +    return IsDailyGame();
 +}
 +
-+// Vanilla trainer parties have no EVs; give RED his spreads from
-+// gDailyRedBossEVs. Called from CreateNPCTrainerParty.
++// Vanilla trainer parties have no EVs; give RED his competitive sets, moves, items and spreads.
++// Called from CreateNPCTrainerParty.
 +void DailyRed_ApplyBossEVs(struct Pokemon *party, u8 partySize)
 +{
-+    u8 i, stat;
-+
-+    for (i = 0; i < partySize && i < DAILYRED_BOSS_PARTY_SIZE; i++)
-+    {
-+        for (stat = 0; stat < NUM_STATS; stat++)
-+            SetMonData(&party[i], MON_DATA_HP_EV + stat, &gDailyRedBossEVs[i][stat]);
-+        CalculateMonStats(&party[i]);
-+    }
++    u32 seed = *(const vu32 *)&gDailyRedRomConfig.seed;
++    DailyRed_ApplyBossTeam(party, partySize, seed);
 +}
 diff --git a/src/dailyred_boss.c b/src/dailyred_boss.c
 new file mode 100644
-index 0000000..37ee62e
+index 0000000..a15e708
 --- /dev/null
 +++ b/src/dailyred_boss.c
-@@ -0,0 +1,77 @@
+@@ -0,0 +1,225 @@
 +#include "global.h"
 +#include "dailyred.h"
++#include "pokemon.h"
++#include "random.h"
 +#include "constants/items.h"
 +#include "constants/moves.h"
 +#include "constants/species.h"
 +
-+// RED's team for Daily Red. This file is the one place to edit it.
++// RED's team for Daily Red.
 +//
-+// Species and order follow Red's Mt. Silver team from HeartGold/SoulSilver.
-+// Movesets are adapted to moves that exist in Gen 3 (HGSS used several Gen 4
-+// moves), and every Pokemon is level 100 with perfect IVs and a full EV
-+// spread.
++// Base roster: Pikachu, Espeon, Snorlax, Venusaur, Charizard, Blastoise.
++// Each Pokemon has 3 distinct competitive sets (Smogon ADV / Showdown Gen 3 formats).
++// The set picked for each Pokemon is determined pseudo-randomly from the day's seed,
++// giving Red unpredictable variety while keeping battles consistent for everyone on
++// the same day.
 +//
-+// The battle itself is a normal FireRed trainer battle: the trainer entry
-+// (name, class, sprite, AI flags) is TRAINER_DAILYRED_RED in
-+// src/data/trainers.h.
-+//
-+// iv: 0-255, scaled to 0-31 by the game (255 = 31 in every stat).
++// Every set has tailored moves, held items, perfect IVs (31), competitive EV spreads,
++// max friendship (255) for full Return power, and full HP.
 +
++struct BossMonSet
++{
++    u16 heldItem;
++    u16 moves[MAX_MON_MOVES];
++    u8 evs[NUM_STATS]; // HP, Atk, Def, Speed, SpAtk, SpDef
++};
++
++static const struct BossMonSet sBossSets[DAILYRED_BOSS_PARTY_SIZE][3] =
++{
++    // Slot 0: Pikachu
++    {
++        // Set 1: Special Sweeper (Light Ball)
++        {
++            .heldItem = ITEM_LIGHT_BALL,
++            .moves = {MOVE_THUNDERBOLT, MOVE_SURF, MOVE_HIDDEN_POWER, MOVE_QUICK_ATTACK},
++            .evs = {0, 0, 4, 252, 252, 0},
++        },
++        // Set 2: Physical / Volt Tackle (Light Ball)
++        {
++            .heldItem = ITEM_LIGHT_BALL,
++            .moves = {MOVE_VOLT_TACKLE, MOVE_BRICK_BREAK, MOVE_IRON_TAIL, MOVE_QUICK_ATTACK},
++            .evs = {0, 252, 4, 252, 0, 0},
++        },
++        // Set 3: Sub / T-Wave Support (Light Ball)
++        {
++            .heldItem = ITEM_LIGHT_BALL,
++            .moves = {MOVE_THUNDERBOLT, MOVE_SUBSTITUTE, MOVE_THUNDER_WAVE, MOVE_SEISMIC_TOSS},
++            .evs = {4, 0, 0, 252, 252, 0},
++        },
++    },
++
++    // Slot 1: Espeon
++    {
++        // Set 1: Calm Mind Sweeper
++        {
++            .heldItem = ITEM_LEFTOVERS,
++            .moves = {MOVE_CALM_MIND, MOVE_PSYCHIC, MOVE_BITE, MOVE_MORNING_SUN},
++            .evs = {4, 0, 0, 252, 252, 0},
++        },
++        // Set 2: Offensive Special Wallbreaker
++        {
++            .heldItem = ITEM_TWISTED_SPOON,
++            .moves = {MOVE_PSYCHIC, MOVE_SHADOW_BALL, MOVE_MORNING_SUN, MOVE_CALM_MIND},
++            .evs = {0, 0, 4, 252, 252, 0},
++        },
++        // Set 3: Dual Screens Support
++        {
++            .heldItem = ITEM_LEFTOVERS,
++            .moves = {MOVE_REFLECT, MOVE_LIGHT_SCREEN, MOVE_PSYCHIC, MOVE_TOXIC},
++            .evs = {252, 0, 4, 252, 0, 0},
++        },
++    },
++
++    // Slot 2: Snorlax
++    {
++        // Set 1: CurseLax Tank
++        {
++            .heldItem = ITEM_CHESTO_BERRY,
++            .moves = {MOVE_CURSE, MOVE_BODY_SLAM, MOVE_EARTHQUAKE, MOVE_REST},
++            .evs = {144, 0, 188, 0, 0, 176},
++        },
++        // Set 2: Choice Band Wallbreaker
++        {
++            .heldItem = ITEM_CHOICE_BAND,
++            .moves = {MOVE_RETURN, MOVE_EARTHQUAKE, MOVE_SHADOW_BALL, MOVE_SELF_DESTRUCT},
++            .evs = {4, 252, 0, 0, 0, 252},
++        },
++        // Set 3: RestTalk Special Tank
++        {
++            .heldItem = ITEM_LEFTOVERS,
++            .moves = {MOVE_BODY_SLAM, MOVE_SHADOW_BALL, MOVE_REST, MOVE_SLEEP_TALK},
++            .evs = {252, 0, 136, 0, 0, 120},
++        },
++    },
++
++    // Slot 3: Venusaur
++    {
++        // Set 1: SubSeed Stall
++        {
++            .heldItem = ITEM_LEFTOVERS,
++            .moves = {MOVE_LEECH_SEED, MOVE_SUBSTITUTE, MOVE_SLUDGE_BOMB, MOVE_GIGA_DRAIN},
++            .evs = {252, 0, 68, 0, 0, 188},
++        },
++        // Set 2: Special Sweeper / Sleep Support
++        {
++            .heldItem = ITEM_LEFTOVERS,
++            .moves = {MOVE_SLEEP_POWDER, MOVE_SLUDGE_BOMB, MOVE_GIGA_DRAIN, MOVE_SYNTHESIS},
++            .evs = {252, 0, 0, 4, 252, 0},
++        },
++        // Set 3: Swords Dance Physical Sweeper
++        {
++            .heldItem = ITEM_LEFTOVERS,
++            .moves = {MOVE_SWORDS_DANCE, MOVE_SLUDGE_BOMB, MOVE_EARTHQUAKE, MOVE_SLEEP_POWDER},
++            .evs = {4, 252, 0, 252, 0, 0},
++        },
++    },
++
++    // Slot 4: Charizard
++    {
++        // Set 1: Special Fire Sweeper (Flamethrower & Sunny Day)
++        {
++            .heldItem = ITEM_CHARCOAL,
++            .moves = {MOVE_FLAMETHROWER, MOVE_DRAGON_CLAW, MOVE_FIRE_BLAST, MOVE_SUNNY_DAY},
++            .evs = {0, 0, 4, 252, 252, 0},
++        },
++        // Set 2: Dragon Dance Physical Sweeper
++        {
++            .heldItem = ITEM_LIECHI_BERRY,
++            .moves = {MOVE_DRAGON_DANCE, MOVE_EARTHQUAKE, MOVE_ROCK_SLIDE, MOVE_OVERHEAT},
++            .evs = {0, 252, 0, 252, 4, 0},
++        },
++        // Set 3: Swords Dance Wallbreaker
++        {
++            .heldItem = ITEM_SALAC_BERRY,
++            .moves = {MOVE_SWORDS_DANCE, MOVE_EARTHQUAKE, MOVE_AERIAL_ACE, MOVE_FIRE_BLAST},
++            .evs = {4, 252, 0, 252, 0, 0},
++        },
++    },
++
++    // Slot 5: Blastoise
++    {
++        // Set 1: Bulky Water Tank
++        {
++            .heldItem = ITEM_LEFTOVERS,
++            .moves = {MOVE_SURF, MOVE_ICE_BEAM, MOVE_TOXIC, MOVE_REST},
++            .evs = {252, 0, 252, 0, 0, 4},
++        },
++        // Set 2: Bulky Offensive (Counter & Mirror Coat)
++        {
++            .heldItem = ITEM_MYSTIC_WATER,
++            .moves = {MOVE_HYDRO_PUMP, MOVE_ICE_BEAM, MOVE_EARTHQUAKE, MOVE_MIRROR_COAT},
++            .evs = {252, 0, 0, 4, 252, 0},
++        },
++        // Set 3: Rain Dance Sweeper
++        {
++            .heldItem = ITEM_MYSTIC_WATER,
++            .moves = {MOVE_RAIN_DANCE, MOVE_SURF, MOVE_ICE_BEAM, MOVE_HYDRO_CANNON},
++            .evs = {252, 0, 0, 4, 252, 0},
++        },
++    },
++};
++
++// Base party definition for trainers.h
 +const struct TrainerMonItemCustomMoves gDailyRedBossParty[DAILYRED_BOSS_PARTY_SIZE] =
 +{
-+    {
-+        .iv = 255,
-+        .lvl = 100,
-+        .species = SPECIES_PIKACHU,
-+        .heldItem = ITEM_LIGHT_BALL,
-+        .moves = {MOVE_VOLT_TACKLE, MOVE_THUNDERBOLT, MOVE_IRON_TAIL, MOVE_QUICK_ATTACK},
-+    },
-+    {
-+        .iv = 255,
-+        .lvl = 100,
-+        .species = SPECIES_ESPEON,
-+        .heldItem = ITEM_TWISTED_SPOON,
-+        .moves = {MOVE_PSYCHIC, MOVE_SHADOW_BALL, MOVE_CALM_MIND, MOVE_MORNING_SUN},
-+    },
-+    {
-+        .iv = 255,
-+        .lvl = 100,
-+        .species = SPECIES_SNORLAX,
-+        .heldItem = ITEM_LEFTOVERS,
-+        .moves = {MOVE_BODY_SLAM, MOVE_EARTHQUAKE, MOVE_SHADOW_BALL, MOVE_REST},
-+    },
-+    {
-+        .iv = 255,
-+        .lvl = 100,
-+        .species = SPECIES_VENUSAUR,
-+        .heldItem = ITEM_MIRACLE_SEED,
-+        .moves = {MOVE_GIGA_DRAIN, MOVE_SLUDGE_BOMB, MOVE_SLEEP_POWDER, MOVE_LEECH_SEED},
-+    },
-+    {
-+        .iv = 255,
-+        .lvl = 100,
-+        .species = SPECIES_CHARIZARD,
-+        .heldItem = ITEM_CHARCOAL,
-+        .moves = {MOVE_FLAMETHROWER, MOVE_DRAGON_CLAW, MOVE_EARTHQUAKE, MOVE_AERIAL_ACE},
-+    },
-+    {
-+        .iv = 255,
-+        .lvl = 100,
-+        .species = SPECIES_BLASTOISE,
-+        .heldItem = ITEM_MYSTIC_WATER,
-+        .moves = {MOVE_SURF, MOVE_ICE_BEAM, MOVE_EARTHQUAKE, MOVE_HYDRO_CANNON},
-+    },
++    { .iv = 255, .lvl = 100, .species = SPECIES_PIKACHU,   .heldItem = ITEM_LIGHT_BALL,   .moves = {MOVE_THUNDERBOLT, MOVE_SURF, MOVE_HIDDEN_POWER, MOVE_QUICK_ATTACK} },
++    { .iv = 255, .lvl = 100, .species = SPECIES_ESPEON,    .heldItem = ITEM_LEFTOVERS,    .moves = {MOVE_CALM_MIND, MOVE_PSYCHIC, MOVE_BITE, MOVE_MORNING_SUN} },
++    { .iv = 255, .lvl = 100, .species = SPECIES_SNORLAX,   .heldItem = ITEM_CHESTO_BERRY, .moves = {MOVE_CURSE, MOVE_BODY_SLAM, MOVE_EARTHQUAKE, MOVE_REST} },
++    { .iv = 255, .lvl = 100, .species = SPECIES_VENUSAUR,  .heldItem = ITEM_LEFTOVERS,    .moves = {MOVE_LEECH_SEED, MOVE_SUBSTITUTE, MOVE_SLUDGE_BOMB, MOVE_GIGA_DRAIN} },
++    { .iv = 255, .lvl = 100, .species = SPECIES_CHARIZARD, .heldItem = ITEM_CHARCOAL,     .moves = {MOVE_FLAMETHROWER, MOVE_DRAGON_CLAW, MOVE_FIRE_BLAST, MOVE_SUNNY_DAY} },
++    { .iv = 255, .lvl = 100, .species = SPECIES_BLASTOISE, .heldItem = ITEM_LEFTOVERS,    .moves = {MOVE_SURF, MOVE_ICE_BEAM, MOVE_TOXIC, MOVE_REST} },
 +};
 +
-+// EVs for each Pokemon above, in the same order.
-+// Stat order: HP, Attack, Defense, Speed, Sp. Atk, Sp. Def (max 255 each, 510 total).
-+// Vanilla FireRed trainers have no EVs; DailyRed_ApplyBossEVs adds these.
++// Fallback static EVs
 +const u8 gDailyRedBossEVs[DAILYRED_BOSS_PARTY_SIZE][NUM_STATS] =
 +{
-+    {  0, 124,   0, 252, 132,   0}, // Pikachu
++    {  0,   0,   4, 252, 252,   0}, // Pikachu
 +    {  4,   0,   0, 252, 252,   0}, // Espeon
-+    {252, 252,   4,   0,   0,   0}, // Snorlax
-+    {252,   0,   0,   4, 252,   0}, // Venusaur
-+    {  0,   4,   0, 252, 252,   0}, // Charizard
-+    {252,   0,   0,   4, 252,   0}, // Blastoise
++    {144,   0, 188,   0,   0, 176}, // Snorlax
++    {252,   0,  68,   0,   0, 188}, // Venusaur
++    {  0,   0,   4, 252, 252,   0}, // Charizard
++    {252,   0, 252,   0,   0,   4}, // Blastoise
 +};
++
++void DailyRed_ApplyBossTeam(struct Pokemon *party, u8 partySize, u32 seed)
++{
++    u8 i, m, stat;
++    u8 iv = MAX_PER_STAT_IVS; // 31
++    u8 friendship = 255;
++    u32 rng = seed ? (seed ^ 0xA5A5A5A5) : Random32();
++
++    for (i = 0; i < partySize && i < DAILYRED_BOSS_PARTY_SIZE; i++)
++    {
++        u8 setIdx;
++        const struct BossMonSet *set;
++
++        rng = ISO_RANDOMIZE1(rng);
++        setIdx = (rng >> 16) % 3;
++        set = &sBossSets[i][setIdx];
++
++        // Apply custom moves with full PP
++        for (m = 0; m < MAX_MON_MOVES; m++)
++            SetMonMoveSlot(&party[i], set->moves[m], m);
++
++        // Apply held item
++        SetMonData(&party[i], MON_DATA_HELD_ITEM, &set->heldItem);
++
++        // Max IVs (31)
++        for (stat = 0; stat < NUM_STATS; stat++)
++            SetMonData(&party[i], MON_DATA_HP_IV + stat, &iv);
++
++        // Tailored EVs for this set
++        for (stat = 0; stat < NUM_STATS; stat++)
++            SetMonData(&party[i], MON_DATA_HP_EV + stat, &set->evs[stat]);
++
++        // Max Friendship (255) for Return power & competitive parity
++        SetMonData(&party[i], MON_DATA_FRIENDSHIP, &friendship);
++
++        // Recalculate stats and restore to full HP
++        CalculateMonStats(&party[i]);
++        {
++            u16 maxHp = GetMonData(&party[i], MON_DATA_MAX_HP);
++            SetMonData(&party[i], MON_DATA_HP, &maxHp);
++        }
++    }
++}
 diff --git a/src/dailyred_team.c b/src/dailyred_team.c
 new file mode 100644
-index 0000000..58faeea
+index 0000000..5a60e4b
 --- /dev/null
 +++ b/src/dailyred_team.c
-@@ -0,0 +1,425 @@
+@@ -0,0 +1,435 @@
 +#include "global.h"
 +#include "dailyred.h"
 +#include "party_menu.h"
@@ -1446,10 +1603,12 @@ index 0000000..58faeea
 +// Competitive team generator for Daily Red.
 +//
 +// Features:
-+//   - Fully evolved Pok??mon only (evolution filter via gEvolutionTable).
++//   - Fully evolved Pokémon only (evolution filter via gEvolutionTable).
 +//   - Competitive movesets & items based on Smogon ADV / Showdown Gen 3 dataset.
-+//   - Maximum IVs (31) for all stats on both player and opponent.
++//   - Maximum IVs (31) for all stats.
 +//   - Structured EV distribution: 85 EVs per stat (Showdown Random Battles format).
++//   - Maximum Friendship (255) for maximum Return base power (102 BP).
++//   - Correct Max HP synchronization (fixes move-fallback bug).
 +//   - Anti-sweep verification: ensures at least one counter against RED's Charizard.
 +
 +#define MAX_CANDIDATE_MOVES      128
@@ -1775,7 +1934,9 @@ index 0000000..58faeea
 +{
 +    u8 metLocation = METLOC_FATEFUL_ENCOUNTER;
 +    u8 fateful = TRUE;
++    u8 friendship = 255;
 +    u8 i, iv;
++    u16 maxHp;
 +
 +    // Hardcode maximum IVs (31) for all stats
 +    for (i = 0; i < NUM_STATS; i++)
@@ -1787,8 +1948,14 @@ index 0000000..58faeea
 +
 +    SetMonData(mon, MON_DATA_MODERN_FATEFUL_ENCOUNTER, &fateful);
 +    SetMonData(mon, MON_DATA_MET_LOCATION, &metLocation);
++    // Max friendship (255) ensures Return reaches full 102 base power
++    SetMonData(mon, MON_DATA_FRIENDSHIP, &friendship);
 +
 +    CalculateMonStats(mon);
++    // Ensure current HP is synchronized with newly calculated max HP
++    maxHp = GetMonData(mon, MON_DATA_MAX_HP);
++    SetMonData(mon, MON_DATA_HP, &maxHp);
++
 +    AssignRandomItem(mon, rng);
 +}
 +
@@ -1848,10 +2015,10 @@ index 0000000..58faeea
 +                break;
 +        }
 +
++        // Never revert to vanilla default moves: if all attempts fail, re-generate with CreateRandomMon
 +        if (attempt == MAX_MON_ATTEMPTS)
 +        {
-+            CreateTeamMon(&party[i], species[i], rngState);
-+            FinishTeamMon(&party[i], rngState);
++            CreateRandomMon(&party[i], species[i], rngState);
 +        }
 +    }
 +}

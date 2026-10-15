@@ -1,10 +1,12 @@
 // Downloads the ROM and the emulator core once per visit and keeps them in
 // memory, so starting a new run only has to restart the emulator.
 
+const CACHE_VERSION = '20261015-v3';
+
 const FILES = {
-  rom: 'game/dailyred.gba.gz',
-  coreJs: 'vendor/mgba_libretro.js',
-  coreWasm: 'vendor/mgba_libretro.wasm',
+  rom: `game/dailyred.gba.gz?v=${CACHE_VERSION}`,
+  coreJs: `vendor/mgba_libretro.js?v=${CACHE_VERSION}`,
+  coreWasm: `vendor/mgba_libretro.wasm?v=${CACHE_VERSION}`,
 };
 
 let cached = null;
