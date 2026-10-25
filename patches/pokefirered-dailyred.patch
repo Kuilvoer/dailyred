@@ -3260,7 +3260,7 @@ index 0000000..dc31ce7
 @@ -0,0 +1,804 @@
 +#include "global.h"
 +#include "battle.h"
-+#include "battle_controllers.h"
++#include "battle_anim.h"
 +#include "dailyred.h"
 +#include "party_menu.h"
 +#include "pokemon.h"
@@ -3759,7 +3759,7 @@ index 0000000..dc31ce7
 +
 +u8 DailyRed_GetBattlerHiddenPowerType(u8 battler)
 +{
-+    struct Pokemon *party = (GET_BATTLER_SIDE(battler) == B_SIDE_OPPONENT) ? gEnemyParty : gPlayerParty;
++    struct Pokemon *party = ((gBattlerPositions[battler] & BIT_SIDE) == B_SIDE_OPPONENT) ? gEnemyParty : gPlayerParty;
 +    struct Pokemon *mon = &party[gBattlerPartyIndexes[battler]];
 +    return DailyRed_GetHiddenPowerType(mon);
 +}
