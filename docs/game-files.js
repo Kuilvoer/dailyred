@@ -1,7 +1,7 @@
 // Downloads the ROM and the emulator core once per visit and keeps them in
 // memory, so starting a new run only has to restart the emulator.
 
-const CACHE_VERSION = '20261015-v3';
+const CACHE_VERSION = '20261025-v4';
 
 const FILES = {
   rom: `game/dailyred.gba.gz?v=${CACHE_VERSION}`,

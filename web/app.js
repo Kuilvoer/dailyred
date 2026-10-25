@@ -3,7 +3,7 @@
 // ROM; this file starts it with the day's seed, watches for the result, and
 // keeps the stats (see daily.js).
 import { Nostalgist } from './vendor/nostalgist.js';
-import { loadGameFiles } from './game-files.js';
+import { loadGameFiles } from './game-files.js?v=20261025-v4';
 import { injectConfig, parseSeed } from './rom-config.js';
 import { createGameLink, PHASE, RESULT } from './game-link.js';
 import {
