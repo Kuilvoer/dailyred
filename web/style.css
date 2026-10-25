@@ -279,6 +279,12 @@ a { color: inherit; text-underline-offset: 3px; }
 
 .button-quiet:not(:disabled):hover { border-color: var(--muted); }
 
+#speed[aria-pressed="true"]:not(:disabled) {
+  color: #fff;
+  background: var(--crimson);
+  border-color: var(--crimson-deep);
+}
+
 /* Touch controls (phones and tablets only) ---------------------------------- */
 
 .pad {

@@ -3,7 +3,7 @@
 // ROM; this file starts it with the day's seed, watches for the result, and
 // keeps the stats (see daily.js).
 import { Nostalgist } from './vendor/nostalgist.js';
-import { loadGameFiles } from './game-files.js?v=20261025-v4';
+import { loadGameFiles } from './game-files.js?v=20261025-v5';
 import { injectConfig, parseSeed } from './rom-config.js';
 import { createGameLink, PHASE, RESULT } from './game-link.js';
 import {
@@ -17,6 +17,7 @@ const screen = $('screen');
 const ui = {
   play: $('play'),
   retry: $('retry'),
+  speed: $('speed'),
   sound: $('sound'),
   fullscreen: $('fullscreen'),
   wins: $('stat-wins'),
@@ -49,6 +50,7 @@ let readGame = null;
 let pollTimer = null;
 let runDate = null;
 let battleSeen = false;
+let fastForward = session.get('dailyred-fastforward') === '1';
 let muted = session.get('dailyred-muted') === '1';
 let starting = false;
 let titleDate = null;
@@ -70,6 +72,7 @@ if (NativeAudioContext) {
 function setState(state) {
   app.dataset.state = state;
   const playing = state === 'playing';
+  ui.speed.disabled = !playing;
   ui.sound.disabled = !playing;
   ui.fullscreen.disabled = !playing || !document.fullscreenEnabled;
 }
@@ -177,12 +180,15 @@ async function startRun() {
       resolveCoreWasm: () => files.coreWasm,
       retroarchConfig: {
         audio_mute_enable: muted,
+        fastforward_ratio: 2.0,
+        fastforward_frameskip: true,
         // The site never makes save states itself; uncompressed ones let the
         // debugging tools in tests/ read the game's RAM.
         savestate_file_compression: false,
         savestate_thumbnail_enable: false,
       },
     });
+    if (fastForward) emu.sendCommand('FAST_FORWARD');
 
     readGame = createGameLink(emu, seed);
     battleSeen = false;
@@ -248,6 +254,21 @@ function onClick(button, handler) {
 onClick(ui.play, startRun);
 onClick(ui.retry, startRun);
 
+function toggleSpeed() {
+  if (!emu) return;
+  emu.sendCommand('FAST_FORWARD');
+  fastForward = !fastForward;
+  session.set('dailyred-fastforward', fastForward ? '1' : '0');
+  showSpeed();
+}
+
+onClick(ui.speed, toggleSpeed);
+
+function showSpeed() {
+  ui.speed.textContent = fastForward ? '⚡ 2x Speed' : '1x Speed';
+  ui.speed.setAttribute('aria-pressed', String(fastForward));
+}
+
 onClick(ui.sound, () => {
   if (!emu) return;
   emu.sendCommand('MUTE');
@@ -274,6 +295,7 @@ document.addEventListener('fullscreenchange', () => {
 window.addEventListener('keydown', (event) => {
   if (app.dataset.state === 'playing' && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(event.key)) {
     event.preventDefault();
+    if (event.key === ' ' && !event.repeat) toggleSpeed();
   }
 });
 
@@ -353,5 +375,6 @@ window.dailyRed = {
 
 renderTitle();
 setState('title');
+showSpeed();
 showMuted();
 ui.fullscreen.hidden = !document.fullscreenEnabled; // e.g. iPhone Safari

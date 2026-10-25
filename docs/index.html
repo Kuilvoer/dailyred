@@ -10,8 +10,8 @@
   <meta http-equiv="Expires" content="0">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="preload" href="vendor/pixelify-sans.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="style.css?v=20261025-v4">
-  <script type="module" src="app.js?v=20261025-v4"></script>
+  <link rel="stylesheet" href="style.css?v=20261025-v5">
+  <script type="module" src="app.js?v=20261025-v5"></script>
 </head>
 <body>
   <main class="app" data-state="title">
@@ -52,6 +52,7 @@
       </div>
 
       <div class="toolbar">
+        <button class="button button-quiet" id="speed" type="button" aria-pressed="false" disabled>1x Speed</button>
         <button class="button button-quiet" id="sound" type="button" aria-pressed="false" disabled>Mute</button>
         <button class="button button-quiet" id="fullscreen" type="button" disabled>Full screen</button>
       </div>
@@ -83,6 +84,7 @@
         <div><dt><kbd>Z</kbd></dt><dd>B button: back, cancel</dd></div>
         <div><dt><kbd>Enter</kbd></dt><dd>Start: open the menu</dd></div>
         <div><dt><kbd>Right Shift</kbd></dt><dd>Select</dd></div>
+        <div><dt><kbd>Space</kbd></dt><dd>Toggle 2x speed (fast-forward)</dd></div>
       </dl>
       <p class="guide-note">On a phone or tablet, use the buttons under the screen.</p>
     </section>
